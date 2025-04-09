@@ -1,0 +1,2 @@
+python choose.py
+pause;
