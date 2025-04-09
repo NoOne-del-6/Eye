@@ -25,15 +25,18 @@
 1、克隆本仓库
 
 ```bash
-    git clone https://github.com/NoOne-del-6/Eye.git
+git clone https://github.com/NoOne-del-6/Eye.git
 ```
 
 2、安装依赖
 
 使用以下命令安装必要的 Python 包：
-    ```bash
-    pip install -r requirements.txt
-    ```
+
+```bash
+pip install -r requirements.txt
+```
+
+
 
 ## 功能
 
