@@ -127,9 +127,9 @@ def summarize_emotion_distribution(frame_data: list, fer) -> dict:
 
 
 # -------------------- 绘制柱状图 --------------------
-def plot_emotion_distribution(emotion_count: dict, video_file: str):
+def plot_emotion_distribution(emotion_count: dict, video_file: str,folder_path):
     """
-    Plot the bar chart of emotion distribution and save it.
+    Plot the bar chart of emotion distribution and save it to the 'results' folder within the video file's directory.
     """
     labels = list(emotion_count.keys())
     sizes = list(emotion_count.values())
@@ -147,8 +147,14 @@ def plot_emotion_distribution(emotion_count: dict, video_file: str):
         yval = bar.get_height()
         ax.text(bar.get_x() + bar.get_width() / 2, yval, round(yval, 2), ha='center', va='bottom')
 
+    # 获取视频文件所在的文件夹路径并创建 results 子文件夹
+    results_folder = os.path.join(folder_path, 'results')
+    os.makedirs(results_folder, exist_ok=True)
+
+    # 设置保存柱状图的路径
+    bar_chart_path = os.path.join(results_folder, f"{os.path.splitext(video_file)[0]}_emotion_bar_chart.png")
+
     # 保存柱状图
-    bar_chart_path = os.path.join(os.path.dirname(video_file), f"{os.path.splitext(video_file)[0]}_emotion_bar_chart.png")
     plt.savefig(bar_chart_path)
     plt.close()
 
@@ -186,25 +192,25 @@ def main():
                   f"Neutral: {proportions['Neutral']:.2f}, "
                   f"Negative: {proportions['Negative']:.2f})")
 
-            # 绘制柱状图
-            bar_chart_path = plot_emotion_distribution(emotion_count, video_file)
+            # 绘制柱状图并保存到 'results' 文件夹
+            bar_chart_path = plot_emotion_distribution(emotion_count, video_file,folder_path)
 
             # 保存情绪分析结果为 CSV 文件
-            csv_file_path = os.path.join(os.path.dirname(video_path), f"{os.path.splitext(video_file)[0]}_emotion_scores.csv")
+            csv_file_path = os.path.join(os.path.dirname(video_path), 'results', f"{os.path.splitext(video_file)[0]}_emotion_scores.csv")
             df = pd.DataFrame(frame_data)
             df.to_csv(csv_file_path, index=False)
 
             # 写入总结信息
             summary.append(f"Video: {video_file}")
-            summary.append(f"Highest Emotion: {highest_emotion} "
-                           f"(Positive: {proportions['Positive']:.2f}, "
-                           f"Neutral: {proportions['Neutral']:.2f}, "
-                           f"Negative: {proportions['Negative']:.2f})\n")
-            summary.append(f"CSV Saved at: {csv_file_path}\n")
-            summary.append(f"Bar Chart Saved at: {bar_chart_path}\n")
+            summary.append(f"          Highest Emotion: {highest_emotion} \n\n"
+                        #    f"(Positive: {proportions['Positive']:.2f}, "
+                        #    f"Neutral: {proportions['Neutral']:.2f}, "
+                        #    f"Negative: {proportions['Negative']:.2f})\n"
+                           )
 
-    # 将总结保存到文件
-    summary_path = "emotion_summary.txt"
+
+    # 将总结保存到 'results' 文件夹中
+    summary_path = os.path.join(folder_path, 'results', "emotion_summary.txt")
     with open(summary_path, 'w', encoding='utf-8') as f:
         f.writelines(summary)
 
