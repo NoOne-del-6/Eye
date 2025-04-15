@@ -3,7 +3,6 @@ from typing import List
 import numpy as np
 import cv2
 import torch
-import matplotlib.pyplot as plt
 import pandas as pd
 from facenet_pytorch import MTCNN
 from emotiefflib.facial_analysis import EmotiEffLibRecognizer, get_model_list
@@ -30,22 +29,29 @@ def recognize_faces(frame: np.ndarray, device: str) -> List[np.array]:
         facial_images.append(frame[y1:y2, x1:x2, :])  # 切割人脸区域
     return facial_images
 
-# -------------------- 主流程 --------------------
-device = "cuda:0"  # 设置为 GPU 设备
-model_name = get_model_list()[0]
 
-# 视频文件夹路径
-input_folder = r"C:\Users\Lhtooo\Desktop\video"
-video_files = [f for f in os.listdir(input_folder) if f.endswith('.avi')]  # 获取所有视频文件
+# -------------------- 情绪分类函数 --------------------
+def classify_emotion(emotion: str) -> str:
+    """
+    根据模型预测的情绪进行分类
+    """
+    positive_emotions = ["Happiness", "Surprise"]
+    negative_emotions = ["Anger", "Contempt", "Disgust", "Fear", "Sadness"]
+    neutral_emotions = ["Neutral"]
 
-fer = EmotiEffLibRecognizer(engine="onnx", model_name=model_name, device=device)  # 初始化情绪识别器
+    if emotion in positive_emotions:
+        return "Positive"
+    elif emotion in negative_emotions:
+        return "Negative"
+    else:
+        return "Neutral"
 
-# 创建一个字典来保存每个视频的结果
-all_results = {}
 
-# -------------------- 并行化处理视频帧 --------------------
-# 通过多线程并行化处理每个视频的帧
-def process_video_frame(video_path: str):
+# -------------------- 视频处理函数 --------------------
+def process_video_frame(video_path: str, device: str, fer: EmotiEffLibRecognizer) -> (List[dict], np.ndarray):
+    """
+    处理视频帧并返回每帧的情绪得分和其他相关数据
+    """
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
     all_scores = None
@@ -88,47 +94,70 @@ def process_video_frame(video_path: str):
     cap.release()
     return frame_data, all_scores
 
-# -------------------- 视频处理 --------------------
-for video_file in video_files:
-    video_path = os.path.join(input_folder, video_file)
-    print(f"正在处理视频：{video_path}")
+
+# -------------------- 保存结果到文件 --------------------
+def save_results_to_txt(all_results: dict, output_txt_path: str):
+    """
+    保存分析结果到一个txt文件中
+    """
+    with open(output_txt_path, "w",encoding="utf-8") as file:
+        for video_file, result in all_results.items():
+            file.write(f"Video File: {video_file}\n")
+            file.write(f"Predicted Emotion: {result['predicted_emotion']}\n")
+            file.write(f"Emotion Type: {result['emotion_type']}\n")
+            file.write(f"CSV Path: {result['csv_path']}\n")
+            file.write("\n")  # 每个视频结果之间空一行
+    print(f"Results saved to {output_txt_path}")
+
+
+# -------------------- 主流程 --------------------
+def main():
+    device = "cuda:0"  # 设置为 GPU 设备
+    model_name = get_model_list()[0]
+    
+    # 视频文件夹路径
+    input_folder = r"C:\Users\Lhtooo\Desktop\video"
+    video_files = [f for f in os.listdir(input_folder) if f.endswith('.avi')]  # 获取所有视频文件
+    
+    fer = EmotiEffLibRecognizer(engine="onnx", model_name=model_name, device=device)  # 初始化情绪识别器
+    
+    # 创建一个字典来保存每个视频的结果
+    all_results = {}
 
     # 使用线程池并行处理视频帧
-    frame_data, all_scores = process_video_frame(video_path)
+    with ThreadPoolExecutor() as executor:
+        futures = []
+        for video_file in video_files:
+            video_path = os.path.join(input_folder, video_file)
+            futures.append(executor.submit(process_video_frame, video_path, device, fer))
 
-    # -------------------- 输出分析结果 --------------------
-    # 情绪类别划分
-    positive_emotions = ["Happiness", "Surprise"]
-    negative_emotions = ["Anger", "Contempt", "Disgust", "Fear", "Sadness"]
-    neutral_emotions = ["Neutral"]
+        for future, video_file in zip(futures, video_files):
+            frame_data, all_scores = future.result()
 
-    # 根据模型预测的情绪进行分类
-    def classify_emotion(emotion):
-        if emotion in positive_emotions:
-            return "Positive"
-        elif emotion in negative_emotions:
-            return "Negative"
-        else:
-            return "Neutral"
+            # -------------------- 输出分析结果 --------------------
+            score = np.mean(all_scores, axis=0)
+            emotion_idx = np.argmax(score)
+            predicted_emotion = fer.idx_to_emotion_class[emotion_idx]
+            emotion_type = classify_emotion(predicted_emotion)
+            print(f"Video: {video_file}, Predicted Emotion: {predicted_emotion}, Emotion Type: {emotion_type}")
 
-    # 计算所有帧的平均得分
-    score = np.mean(all_scores, axis=0)
-    emotion_idx = np.argmax(score)
-    predicted_emotion = fer.idx_to_emotion_class[emotion_idx]
-    emotion_type = classify_emotion(predicted_emotion)
-    print(f"情绪: {predicted_emotion}, 类型: {emotion_type}")
+            # 保存每帧情绪得分到 CSV
+            df = pd.DataFrame(frame_data)
+            video_csv_path = os.path.join(input_folder, f"{video_file}_frame_emotion_scores.csv")
+            df.to_csv(video_csv_path, index=False)
+            print(f"情绪得分已保存为：{video_csv_path}")
 
-    # 保存每帧情绪得分到 CSV
-    df = pd.DataFrame(frame_data)
-    video_csv_path = os.path.join(input_folder, f"{video_file}_frame_emotion_scores.csv")
-    df.to_csv(video_csv_path, index=False)
-    print(f"情绪得分已保存为：{video_csv_path}")
+            # 保存每个视频的结果
+            all_results[video_file] = {
+                "predicted_emotion": predicted_emotion,
+                "emotion_type": emotion_type,
+                "csv_path": video_csv_path
+            }
 
-    # 保存每个视频的结果
-    all_results[video_file] = {
-        "predicted_emotion": predicted_emotion,
-        "emotion_type": emotion_type,
-        "csv_path": video_csv_path
-    }
+    # 结果保存为txt文件
+    output_txt_path = os.path.join(input_folder, "analysis_results.txt")
+    save_results_to_txt(all_results, output_txt_path)
 
-# 现在 all_results 中包含了每个视频的情绪分析结果
+
+if __name__ == "__main__":
+    main()
