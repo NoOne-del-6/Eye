@@ -1,44 +1,51 @@
 import os
-from typing import List
 import numpy as np
 import cv2
 import torch
+import matplotlib.pyplot as plt
+import matplotlib
 import pandas as pd
 from facenet_pytorch import MTCNN
 from emotiefflib.facial_analysis import EmotiEffLibRecognizer, get_model_list
-from concurrent.futures import ThreadPoolExecutor  # 导入并行处理模块
+
+# 设置 matplotlib 支持中文
+matplotlib.rcParams['font.family'] = 'SimHei'
+matplotlib.rcParams['axes.unicode_minus'] = False
+
+# 环境变量设置
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
 
 # -------------------- 人脸识别函数 --------------------
-def recognize_faces(frame: np.ndarray, device: str) -> List[np.array]:
+def recognize_faces(frame: np.ndarray, device: str) -> list[np.array]:
     """
-    通过 MTCNN 检测给定图像中的人脸，并返回裁剪后的人脸区域
+    Detects faces in the given image and returns the cropped facial regions.
     """
     def detect_face(frame: np.ndarray):
         mtcnn = MTCNN(keep_all=False, post_process=False, min_face_size=40, device=device)
-        bounding_boxes, probs = mtcnn.detect(frame, landmarks=False)  # 检测人脸框
+        bounding_boxes, probs = mtcnn.detect(frame, landmarks=False)
         if probs is None or probs[0] is None:
             return []
-        bounding_boxes = bounding_boxes[probs > 0.9]  # 过滤掉低概率的人脸
+        bounding_boxes = bounding_boxes[probs > 0.9]
         return bounding_boxes
 
     bounding_boxes = detect_face(frame)
     facial_images = []
     for bbox in bounding_boxes:
         box = bbox.astype(int)
-        x1, y1, x2, y2 = box[0:4]  # 获取人脸框的坐标
-        facial_images.append(frame[y1:y2, x1:x2, :])  # 切割人脸区域
+        x1, y1, x2, y2 = box[0:4]
+        facial_images.append(frame[y1:y2, x1:x2, :])
     return facial_images
 
 
-# -------------------- 情绪分类函数 --------------------
+# -------------------- 情绪分类 --------------------
 def classify_emotion(emotion: str) -> str:
     """
-    根据模型预测的情绪进行分类
+    Classify the emotion into Positive, Negative, or Neutral categories.
     """
     positive_emotions = ["Happiness", "Surprise"]
     negative_emotions = ["Anger", "Contempt", "Disgust", "Fear", "Sadness"]
-    neutral_emotions = ["Neutral"]
-
+    
     if emotion in positive_emotions:
         return "Positive"
     elif emotion in negative_emotions:
@@ -47,21 +54,24 @@ def classify_emotion(emotion: str) -> str:
         return "Neutral"
 
 
-# -------------------- 视频处理函数 --------------------
-def process_video_frame(video_path: str, device: str, fer: EmotiEffLibRecognizer) -> (List[dict], np.ndarray):
+# -------------------- 情绪分析处理 --------------------
+def process_video(video_path: str, fer, device: str, fps: float) -> list:
     """
-    处理视频帧并返回每帧的情绪得分和其他相关数据
+    Process the video and return a list of frame data including timestamps and emotion scores.
     """
     cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
     all_scores = None
-    frame_data = []  # 用于保存每帧的得分和时间戳
+    frame_data = []  # 用于保存每帧得分 + 时间戳
     i = 0  # 帧计数器
 
     while cap.isOpened():
         success, image = cap.read()
         if not success:
             break
+
+        if i % 65 != 0:  # 每隔一定帧数处理一次
+            i += 1
+            continue
 
         # BGR → RGB 转换
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -76,7 +86,7 @@ def process_video_frame(video_path: str, device: str, fer: EmotiEffLibRecognizer
         # 情绪识别
         emotions, scores = fer.predict_emotions(facial_images, logits=True)
 
-        # 保存时间戳和得分
+        # 保存时间戳 + 得分到列表
         timestamp = i / fps
         frame_data.append({
             "timestamp": timestamp,
@@ -95,68 +105,110 @@ def process_video_frame(video_path: str, device: str, fer: EmotiEffLibRecognizer
     return frame_data, all_scores
 
 
-# -------------------- 保存结果到文件 --------------------
-def save_results_to_txt(all_results: dict, output_txt_path: str):
+# -------------------- 汇总分析 --------------------
+def summarize_emotion_distribution(frame_data: list, fer) -> dict:
     """
-    保存分析结果到一个txt文件中
+    Summarize emotion distribution from the frame data.
     """
-    with open(output_txt_path, "w",encoding="utf-8") as file:
-        for video_file, result in all_results.items():
-            file.write(f"Video File: {video_file}\n")
-            file.write(f"Predicted Emotion: {result['predicted_emotion']}\n")
-            file.write(f"Emotion Type: {result['emotion_type']}\n")
-            file.write(f"CSV Path: {result['csv_path']}\n")
-            file.write("\n")  # 每个视频结果之间空一行
-    print(f"Results saved to {output_txt_path}")
+    # 统计情绪分布
+    emotion_count = {"Positive": 0, "Negative": 0, "Neutral": 0}
+    for frame in frame_data:
+        scores = [frame[emotion] for emotion in frame if emotion != "timestamp"]
+        emotion_idx = np.argmax(scores)
+        predicted_emotion = fer.idx_to_emotion_class[emotion_idx]
+        emotion_type = classify_emotion(predicted_emotion)
+        emotion_count[emotion_type] += 1
+
+    highest_emotion = max(emotion_count, key=emotion_count.get)
+    total = sum(emotion_count.values())
+    proportions = {k: v / total for k, v in emotion_count.items()}
+
+    return emotion_count, highest_emotion, proportions
+
+
+# -------------------- 绘制柱状图 --------------------
+def plot_emotion_distribution(emotion_count: dict, video_file: str):
+    """
+    Plot the bar chart of emotion distribution and save it.
+    """
+    labels = list(emotion_count.keys())
+    sizes = list(emotion_count.values())
+
+    # 绘制柱状图
+    fig, ax = plt.subplots(figsize=(8, 6))
+    bars = ax.bar(labels, sizes, color=['lightgreen', 'lightcoral', 'lightblue'])
+
+    ax.set_ylabel('频率')
+    ax.set_xlabel('情绪类型')
+    ax.set_title(f'{video_file} - 情绪类型分布')
+
+    # 在柱状图上显示每个柱子的数值
+    for bar in bars:
+        yval = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width() / 2, yval, round(yval, 2), ha='center', va='bottom')
+
+    # 保存柱状图
+    bar_chart_path = os.path.join(os.path.dirname(video_file), f"{os.path.splitext(video_file)[0]}_emotion_bar_chart.png")
+    plt.savefig(bar_chart_path)
+    plt.close()
+
+    return bar_chart_path
 
 
 # -------------------- 主流程 --------------------
 def main():
-    device = "cuda:0"  # 设置为 GPU 设备
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     model_name = get_model_list()[0]
-    
-    # 视频文件夹路径
-    input_folder = r"C:\Users\Lhtooo\Desktop\video"
-    video_files = [f for f in os.listdir(input_folder) if f.endswith('.avi')]  # 获取所有视频文件
-    
-    fer = EmotiEffLibRecognizer(engine="onnx", model_name=model_name, device=device)  # 初始化情绪识别器
-    
-    # 创建一个字典来保存每个视频的结果
-    all_results = {}
+    fer = EmotiEffLibRecognizer(engine="onnx", model_name=model_name, device=device)
 
-    # 使用线程池并行处理视频帧
-    with ThreadPoolExecutor() as executor:
-        futures = []
-        for video_file in video_files:
-            video_path = os.path.join(input_folder, video_file)
-            futures.append(executor.submit(process_video_frame, video_path, device, fer))
+    folder_path = r"C:\Users\Lhtooo\Desktop\video"
+    summary = []
 
-        for future, video_file in zip(futures, video_files):
-            frame_data, all_scores = future.result()
+    for video_file in os.listdir(folder_path):
+        if video_file.endswith(".avi"):
+            video_path = os.path.join(folder_path, video_file)
+            print(f"Processing video: {video_path}")
 
-            # -------------------- 输出分析结果 --------------------
-            score = np.mean(all_scores, axis=0)
-            emotion_idx = np.argmax(score)
-            predicted_emotion = fer.idx_to_emotion_class[emotion_idx]
-            emotion_type = classify_emotion(predicted_emotion)
-            print(f"Video: {video_file}, Predicted Emotion: {predicted_emotion}, Emotion Type: {emotion_type}")
+            # 获取视频帧率
+            cap = cv2.VideoCapture(video_path)
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            cap.release()
 
-            # 保存每帧情绪得分到 CSV
+            # 处理视频
+            frame_data, all_scores = process_video(video_path, fer, device, fps)
+
+            # 汇总情绪分布
+            emotion_count, highest_emotion, proportions = summarize_emotion_distribution(frame_data, fer)
+
+            # 打印情绪分类结果
+            print(f"Highest Emotion: {highest_emotion} "
+                  f"(Positive: {proportions['Positive']:.2f}, "
+                  f"Neutral: {proportions['Neutral']:.2f}, "
+                  f"Negative: {proportions['Negative']:.2f})")
+
+            # 绘制柱状图
+            bar_chart_path = plot_emotion_distribution(emotion_count, video_file)
+
+            # 保存情绪分析结果为 CSV 文件
+            csv_file_path = os.path.join(os.path.dirname(video_path), f"{os.path.splitext(video_file)[0]}_emotion_scores.csv")
             df = pd.DataFrame(frame_data)
-            video_csv_path = os.path.join(input_folder, f"{video_file}_frame_emotion_scores.csv")
-            df.to_csv(video_csv_path, index=False)
-            print(f"情绪得分已保存为：{video_csv_path}")
+            df.to_csv(csv_file_path, index=False)
 
-            # 保存每个视频的结果
-            all_results[video_file] = {
-                "predicted_emotion": predicted_emotion,
-                "emotion_type": emotion_type,
-                "csv_path": video_csv_path
-            }
+            # 写入总结信息
+            summary.append(f"Video: {video_file}")
+            summary.append(f"Highest Emotion: {highest_emotion} "
+                           f"(Positive: {proportions['Positive']:.2f}, "
+                           f"Neutral: {proportions['Neutral']:.2f}, "
+                           f"Negative: {proportions['Negative']:.2f})\n")
+            summary.append(f"CSV Saved at: {csv_file_path}\n")
+            summary.append(f"Bar Chart Saved at: {bar_chart_path}\n")
 
-    # 结果保存为txt文件
-    output_txt_path = os.path.join(input_folder, "analysis_results.txt")
-    save_results_to_txt(all_results, output_txt_path)
+    # 将总结保存到文件
+    summary_path = "emotion_summary.txt"
+    with open(summary_path, 'w', encoding='utf-8') as f:
+        f.writelines(summary)
+
+    print(f"所有视频的情绪分析结果已总结并保存为 {summary_path}")
 
 
 if __name__ == "__main__":
