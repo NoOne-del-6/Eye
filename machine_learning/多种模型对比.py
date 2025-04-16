@@ -1,6 +1,6 @@
 from sklearn.calibration import label_binarize
 from sklearn.model_selection import GridSearchCV, KFold, cross_val_score
-from sklearn.metrics import accuracy_score, auc, classification_report, confusion_matrix, roc_curve
+from sklearn.metrics import accuracy_score, auc, classification_report, confusion_matrix, precision_recall_fscore_support, roc_curve
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
@@ -161,7 +161,6 @@ def calculate_metrics(y_true, y_pred):
 def train_and_evaluate_with_cv(models, X_train, X_test, y_train, y_test, k_fold):
     all_results = {}
     kfold = KFold(n_splits=k_fold, shuffle=True, random_state=42)  # 使用n折交叉验证
-    
     for name, model in models.items():
         print(f"\n开始训练{name}模型...")
         
@@ -189,7 +188,11 @@ def train_and_evaluate_with_cv(models, X_train, X_test, y_train, y_test, k_fold)
             'train_pred': y_train_pred,
             'test_pred': y_test_pred,
             'train_metrics': train_metrics,
-            'test_metrics': test_metrics
+            'test_metrics': test_metrics,
+            'train_metrics': train_metrics,
+            'test_metrics': test_metrics,
+            'train_true': y_train,  # 存储真实标签
+            'test_true': y_test    # 存储真实标签
         }
         
         print(f"{name} - 平均交叉验证准确率: {mean_cv_score:.4f}")
@@ -202,24 +205,48 @@ def train_and_evaluate_with_cv(models, X_train, X_test, y_train, y_test, k_fold)
     
     return all_results
 
-# 保存结果到Excel
-def save_results_to_excel(all_results, selected_features, models):
+def save_results_to_excel(all_results, selected_features,models, file_name="模型比较结果.xlsx"):
     results_summary = []
+    
+    # 循环遍历每个模型
     for model_name, results in all_results.items():
+        # 获取训练集结果
+        train_metrics = results['train_metrics']
+        y_train_pred = results['train_pred']
+        y_train_true = results['train_true']  # 假设你有训练集真实标签
+        
+        # 计算 precision, recall, f1-score
+        precision, recall, f1, support = precision_recall_fscore_support(y_train_true, y_train_pred, average='weighted')
+        accuracy = accuracy_score(y_train_true, y_train_pred)
+        
+        # 添加训练集结果
         results_summary.append({
-            'Model': model_name, 'Dataset': '训练集', **results['train_metrics']
+            'Model': model_name, 'Dataset': '训练集', 'Accuracy': accuracy,
+            'Precision': precision, 'Recall': recall, 'F1-Score': f1, 'Support': support
         })
+        
+        # 获取测试集结果
+        test_metrics = results['test_metrics']
+        y_test_pred = results['test_pred']
+        y_test_true = results['test_true']  # 假设你有测试集真实标签
+        
+        # 计算 precision, recall, f1-score
+        precision, recall, f1, support = precision_recall_fscore_support(y_test_true, y_test_pred, average='weighted')
+        accuracy = accuracy_score(y_test_true, y_test_pred)
+        
+        # 添加测试集结果
         results_summary.append({
-            'Model': model_name, 'Dataset': '测试集', **results['test_metrics']
+            'Model': model_name, 'Dataset': '测试集', 'Accuracy': accuracy,
+            'Precision': precision, 'Recall': recall, 'F1-Score': f1, 'Support': support
         })
     
     # 将结果保存到DataFrame
     results_df = pd.DataFrame(results_summary)
     
     # 保存到Excel文件
-    with pd.ExcelWriter('模型比较结果.xlsx') as writer:
+    with pd.ExcelWriter(file_name) as writer:
         results_df.to_excel(writer, sheet_name='模型评估指标', index=False)
-        
+
         # 遍历所有模型，处理特征重要性
         for name, model in models.items():
             # 确保模型已经训练
@@ -236,8 +263,6 @@ def save_results_to_excel(all_results, selected_features, models):
                         writer, sheet_name=f'{name}_特征重要性', index=False
                     )
 
-
-
 # 可视化模型的准确度对比
 def plot_accuracy_comparison(all_results):
     models = list(all_results.keys())
@@ -245,18 +270,35 @@ def plot_accuracy_comparison(all_results):
     test_accuracies = [results['test_metrics']['Accuracy'] for results in all_results.values()]
 
     # 创建准确度对比图
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(12, 6))
     bar_width = 0.35
     index = np.arange(len(models))
 
-    plt.bar(index, train_accuracies, bar_width, label='Train Accuracy', color='b')
-    plt.bar(index + bar_width, test_accuracies, bar_width, label='Test Accuracy', color='r')
+    # 使用seaborn样式
+    sns.set(style="whitegrid")
+    
+    # 绘制训练集和测试集的准确度
+    bars_train = plt.bar(index, train_accuracies, bar_width, label='Train Accuracy', color='#1f77b4')  # 蓝色
+    bars_test = plt.bar(index + bar_width, test_accuracies, bar_width, label='Test Accuracy', color='#ff7f0e')  # 橙色
 
-    plt.xlabel('Models', fontsize=14)
-    plt.ylabel('Accuracy', fontsize=14)
-    plt.title('Model Accuracy Comparison', fontsize=16)
-    plt.xticks(index + bar_width / 2, models, rotation=45, ha="right")
-    plt.legend()
+    # 添加数值标签
+    for bar in bars_train:
+        yval = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2, yval + 0.02, round(yval, 2), ha='center', va='bottom', fontsize=12, weight='bold')
+    
+    for bar in bars_test:
+        yval = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2, yval + 0.02, round(yval, 2), ha='center', va='bottom', fontsize=12, weight='bold')
+
+    # 添加标题和标签
+    plt.xlabel('Models', fontsize=14, weight='bold')
+    plt.ylabel('Accuracy', fontsize=14, weight='bold')
+    plt.title('Model Accuracy Comparison', fontsize=16, weight='bold')
+    plt.xticks(index + bar_width / 2, models, rotation=0, ha="center", fontsize=12, weight='bold')
+    plt.yticks(fontsize=12)
+    plt.legend(loc='best', fontsize=12)
+    
+    # 显示图表
     plt.tight_layout()
     plt.show()
 
@@ -266,21 +308,28 @@ def plot_confusion_matrix(y_true, y_pred, model_name, labels=None):
     if labels is None:
         labels = np.unique(y_true)  # 获取类别标签
     cm = confusion_matrix(y_true, y_pred, labels=labels)
-    
-    plt.figure(figsize=(6, 6))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=labels, yticklabels=labels)
-    plt.title(f'{model_name} Confusion Matrix', fontsize=16)
-    plt.xlabel('Predicted', fontsize=14)
-    plt.ylabel('True', fontsize=14)
+
+    # 使用seaborn样式
+    sns.set(style="whitegrid")
+
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=labels, yticklabels=labels, 
+                cbar_kws={'label': 'Number of Samples'}, annot_kws={'size': 14, 'weight': 'bold'})
+
+    # 图表美化
+    plt.title(f'{model_name} Confusion Matrix', fontsize=16, weight='bold')
+    plt.xlabel('Predicted Labels', fontsize=14, weight='bold')
+    plt.ylabel('True Labels', fontsize=14, weight='bold')
+    plt.xticks(fontsize=12, weight='bold')
+    plt.yticks(fontsize=12, weight='bold')
     plt.tight_layout()
     plt.show()
-
 
 # 可视化ROC曲线（适用于多分类问题）
 def plot_roc_curve(y_true, y_pred, model_name, n_classes):
     # 对多分类标签进行二进制化
     y_true_bin = label_binarize(y_true, classes=np.arange(n_classes))
-    
+
     # 用于存储每个类别的 FPR, TPR 和 AUC
     fpr = dict()
     tpr = dict()
@@ -294,19 +343,23 @@ def plot_roc_curve(y_true, y_pred, model_name, n_classes):
     for i in range(n_classes):
         fpr[i], tpr[i], _ = roc_curve(y_true_bin[:, i], y_pred[:, i])
         roc_auc[i] = auc(fpr[i], tpr[i])
-    
+
+    # 使用seaborn样式
+    sns.set(style="whitegrid")
+
     # 绘制所有类别的 ROC 曲线
-    plt.figure(figsize=(8, 6))
+    plt.figure(figsize=(10, 8))
     for i in range(n_classes):
         plt.plot(fpr[i], tpr[i], lw=2, label=f'Class {i} (AUC = {roc_auc[i]:.2f})')
-    
+
     # 绘制对角线，表示随机分类器的 ROC 曲线
     plt.plot([0, 1], [0, 1], color='gray', linestyle='--')
-    
-    plt.xlabel('False Positive Rate', fontsize=14)
-    plt.ylabel('True Positive Rate', fontsize=14)
-    plt.title(f'ROC Curve for {model_name}', fontsize=16)
-    plt.legend(loc='lower right')
+
+    # 图表美化
+    plt.xlabel('False Positive Rate', fontsize=14, weight='bold')
+    plt.ylabel('True Positive Rate', fontsize=14, weight='bold')
+    plt.title(f'ROC Curve for {model_name}', fontsize=16, weight='bold')
+    plt.legend(loc='lower right', fontsize=12)
     plt.tight_layout()
     plt.show()
 
@@ -325,14 +378,11 @@ def visualize_results(all_results, y_train, y_test, n_classes):
         print(f"绘制 {model_name} 模型的ROC曲线...")
         plot_roc_curve(y_test, results['test_pred'], model_name, n_classes)
 
-
-
-
 # 主函数
 def main():
     # 参数
     max_features = 6  # 选择的特征数量
-    k_folds = 6     # K折交叉验证的折数
+    k_folds = 4     # K折交叉验证的折数
     
     # 文件路径
     file_path = r"C:\Users\Lhtooo\Desktop\data\总结.xlsx"
