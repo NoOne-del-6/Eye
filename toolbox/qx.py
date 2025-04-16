@@ -4,7 +4,7 @@ from matplotlib.colors import LogNorm
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from PyQt5.QtWidgets import QMainWindow,QTextBrowser,QTableWidget, QTableWidgetItem,QScrollArea,QHBoxLayout, QWidget, QVBoxLayout, QPushButton, QFileDialog, QLabel, QSizePolicy, QApplication
+from PyQt5.QtWidgets import QMainWindow,QTableWidget, QTableWidgetItem,QScrollArea,QHBoxLayout, QWidget, QVBoxLayout, QPushButton, QFileDialog, QLabel, QSizePolicy, QApplication
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -14,6 +14,8 @@ from scipy.ndimage import gaussian_filter
 from matplotlib.offsetbox import AnchoredText
 import os
 from natsort import natsorted
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import RobustScaler
 
 
 
@@ -467,7 +469,41 @@ class AnalyzeData:
             transition_entropy, std_diff_left, std_diff_right
         )
         return statistics_str
-            
+        
+class EmotionPrediction:
+    def __init__(self, data_process, message_label):
+        # 假设数据预处理对象 data_process 和界面消息显示标签 message_label 已经初始化
+        self.data_process = data_process
+        self.message_label = message_label
+        # 初始化模型
+        self.model = self.initialize_model()
+
+    def initialize_model(self):
+        # 假设我们选择了一个 RandomForest 模型，您可以根据需求更换为其他模型
+        model = RandomForestClassifier(n_estimators=100, random_state=42)
+        return model
+
+    def train_model(self, X_train, y_train):
+        # 训练模型
+        self.model.fit(X_train, y_train)
+        self.message_label.setText("模型训练成功")
+
+    def predict(self):
+        # 预测数据，首先处理数据
+        data = self.data_process.data  # 假设这里是处理过的输入数据
+
+        # 进行数据预处理
+        scaler = RobustScaler()
+        scaled_data = scaler.fit_transform(data)
+
+        # 进行预测
+        predictions = self.model.predict(scaled_data)
+        
+        # 输出预测结果
+        self.message_label.setText(f"情绪预测结果: {predictions[0]}")  # 这里假设预测结果是一个类标签        
+    
+    
+    
 class MainWindow(QMainWindow):
     
     def __init__(self):
@@ -517,13 +553,18 @@ class MainWindow(QMainWindow):
         self.emotion_button.setEnabled(False)  # 初始状态不可用
         button_layout.addWidget(self.emotion_button)
         
-        layout.addLayout(button_layout)
-        
-
         self.stats_button = QPushButton('统计量')
         self.stats_button.clicked.connect(self.statistics)
-        self.stats_button.setEnabled(True)  # 初始状态不可用
-        layout.addWidget(self.stats_button)
+        self.stats_button.setEnabled(False)  # 初始状态不可用
+        button_layout.addWidget(self.stats_button)
+        
+        layout.addLayout(button_layout)
+        
+        self.predict_button = QPushButton('情绪分析')
+        self.predict_button.clicked.connect(self.predict)
+        self.predict_button.setEnabled(False)  # 初始状态不可用
+        layout.addWidget(self.predict_button)
+        
         
         # 将画布添加到布局中
         self.canvas = self.plotter.canvas
@@ -579,6 +620,7 @@ class MainWindow(QMainWindow):
             self.pupil_button.setEnabled(True)
             self.heatmap_button.setEnabled(True)
             self.emotion_button.setEnabled(True)
+            self.stats_button.setEnabled(True)
         else:
             self.message_label.setText(f"数据处理失败")
      
@@ -650,6 +692,12 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.message_label.setText(f"统计计算失败: {str(e)}")
 
+    def predict(self):
+        # 这里可以添加情绪分析的逻辑
+        # 假设我们有一个情绪预测模型，这里只是一个示例
+        # emotion_prediction = emotion_model.predict(self.data_process.data)
+        # self.message_label.setText(f"情绪预测结果: {emotion_prediction}")
+        self.message_label.setText("情绪分析成功")
 
 
 if __name__ == "__main__":
