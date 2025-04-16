@@ -202,8 +202,8 @@ def train_and_evaluate_with_cv(models, X_train, X_test, y_train, y_test, k_fold)
         print(f"{name} - 测试集评估指标：")
         for metric, value in test_metrics.items():
             print(f"{metric}: {value}")
-    
     return all_results
+
 
 def save_results_to_excel(all_results, selected_features,models, file_name="模型比较结果.xlsx"):
     results_summary = []
