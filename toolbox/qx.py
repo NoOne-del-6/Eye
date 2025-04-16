@@ -15,7 +15,10 @@ from matplotlib.offsetbox import AnchoredText
 import os
 from natsort import natsorted
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import RobustScaler
+from sklearn.svm import SVC
+from xgboost import XGBClassifier
 
 
 
@@ -309,15 +312,15 @@ class AnalyzeData:
         # 每个区域对应的情绪标签（这里是区域到标签的映射）
         self.region_to_emotion = {
             "A_top_left": "Positive",
-            "B_top_middle": "Normal",
+            "B_top_middle": "Neutral",
             "C_top_right": "Negative",
             "A_bottom_left": "Positive",
-            "B_bottom_middle": "Normal",
+            "B_bottom_middle": "Neutral",
             "C_bottom_right": "Negative"
         }
 
         # 情绪标签
-        self.emotion_labels = ['Positive', 'Normal', 'Negative']
+        self.emotion_labels = ['Positive', 'Neutral', 'Negative']
         
     # 计算连续眼动点之间的距离
     def calculate_distance(self):
@@ -471,37 +474,54 @@ class AnalyzeData:
         return statistics_str
         
 class EmotionPrediction:
-    def __init__(self, data_process, message_label):
-        # 假设数据预处理对象 data_process 和界面消息显示标签 message_label 已经初始化
-        self.data_process = data_process
-        self.message_label = message_label
-        # 初始化模型
-        self.model = self.initialize_model()
+    def __init__(self, features):
+        self.features = features
+        # 初始化模型配置
+        self.models = self.initialize_models()
 
-    def initialize_model(self):
-        # 假设我们选择了一个 RandomForest 模型，您可以根据需求更换为其他模型
-        model = RandomForestClassifier(n_estimators=100, random_state=42)
-        return model
-
-    def train_model(self, X_train, y_train):
-        # 训练模型
-        self.model.fit(X_train, y_train)
-        self.message_label.setText("模型训练成功")
+    def initialize_models(self):
+        # 这些模型参数是已经训练好的，直接加载训练好的模型
+        models = {
+            'RF': RandomForestClassifier(max_depth=5, max_features='sqrt', min_samples_leaf=1, min_samples_split=5, n_estimators=100, random_state=42),
+            'SVC': SVC(C=0.1, kernel='linear', gamma='scale'),
+            'Logistic Regression': LogisticRegression(C=0.1, solver='saga'),
+            'XGBoost': XGBClassifier(n_estimators=100, max_depth=3, learning_rate=0.01, subsample=0.8, colsample_bytree=0.8)
+        }
+        return models
 
     def predict(self):
-        # 预测数据，首先处理数据
-        data = self.data_process.data  # 假设这里是处理过的输入数据
-
         # 进行数据预处理
-        scaler = RobustScaler()
-        scaled_data = scaler.fit_transform(data)
-
-        # 进行预测
-        predictions = self.model.predict(scaled_data)
+        data = self.features  # 这里是提取的特征
         
-        # 输出预测结果
-        self.message_label.setText(f"情绪预测结果: {predictions[0]}")  # 这里假设预测结果是一个类标签        
-    
+        # 确保 self.features 是一个包含数值的字典，并提取数值部分
+        # 这里假设 self.features 是一个字典，你需要提取其中的数值部分
+        feature_values = []
+        for key, value in data.items():
+            # 检查值是否为数字类型，如果是数字则直接加入
+            if isinstance(value, (int, float)):
+                feature_values.append(value)
+            else:
+                # 如果值是非数值类型（如字典或列表），你可能需要根据具体情况处理
+                # 例如，如果是情绪占比字典，可以将其转化为数值
+                if isinstance(value, dict):
+                    feature_values.extend(value.values())  # 提取字典的所有数值部分
+
+        # 将 feature_values 转换为 numpy 数组并 reshape 为二维数组
+        feature_values = np.array(feature_values).reshape(1, -1)  # 假设你只有一行数据
+
+        # 数据标准化
+        scaler = RobustScaler()
+        scaled_data = scaler.fit_transform(feature_values)
+
+        # 预测每个模型
+        predictions = {}
+        for model_name, model in self.models.items():
+            model.fit(scaled_data, self.data_process.labels)  # 使用训练数据训练
+            prediction = model.predict(scaled_data)  # 进行预测
+            predictions[model_name] = prediction
+
+        return predictions
+        
     
     
 class MainWindow(QMainWindow):
@@ -514,9 +534,8 @@ class MainWindow(QMainWindow):
         # 初始化数据处理、绘图、数据分析类
         self.data_process = DataProcess()
         self.plotter = PlotShow(FigureCanvas(Figure(figsize=(10,8))))
-        # 在数据加载后才初始化 AnalyzeData
-        self.analyze = None
         self.blink_count = 0
+        self.features = {}
         self.initUI()
         
     def initUI(self):
@@ -580,7 +599,6 @@ class MainWindow(QMainWindow):
         self.prev_button.setVisible(False)
         heatmap_navigation_layout.addWidget(self.prev_button)
 
-
         self.next_button = QPushButton('下一张')
         self.next_button.clicked.connect(self.next_heatmap)
         self.next_button.setFixedWidth(80)  # 设置按钮宽度
@@ -621,6 +639,7 @@ class MainWindow(QMainWindow):
             self.heatmap_button.setEnabled(True)
             self.emotion_button.setEnabled(True)
             self.stats_button.setEnabled(True)
+            self.predict_button.setEnabled(True)
         else:
             self.message_label.setText(f"数据处理失败")
      
@@ -693,11 +712,40 @@ class MainWindow(QMainWindow):
             self.message_label.setText(f"统计计算失败: {str(e)}")
 
     def predict(self):
-        # 这里可以添加情绪分析的逻辑
-        # 假设我们有一个情绪预测模型，这里只是一个示例
-        # emotion_prediction = emotion_model.predict(self.data_process.data)
-        # self.message_label.setText(f"情绪预测结果: {emotion_prediction}")
-        self.message_label.setText("情绪分析成功")
+        try:
+            # 进行情绪预测
+            
+            emotion_percentages = self.analyze.calculate_emotion_percentages()
+            statistics_str = self.analyze.calculate_statistics(self.blink_count)
+             # 将情绪占比拆分并添加到 features 中
+            for emotion, percentage in emotion_percentages.items():
+                self.features[f'{emotion}'] = percentage / 100
+            # 将 statistics_str 拆分并添加到 features 中
+            # 提取统计字符串中的数值部分
+            statistics_data = {
+                'blink_count': self.blink_count,
+                'fixations': int(statistics_str.split('\n')[1].split(':')[1].strip()),
+                'saccades': int(statistics_str.split('\n')[2].split(':')[1].strip()),
+                'static_entropy': float(statistics_str.split('\n')[3].split(':')[1].strip()),
+                'transition_entropy': float(statistics_str.split('\n')[4].split(':')[1].strip()),
+                'std_diff_left': float(statistics_str.split('\n')[5].split(':')[1].strip()),
+                'std_diff_right': float(statistics_str.split('\n')[6].split(':')[1].strip())
+            }
+            # 将提取的统计数据添加到 features 中
+            for key, value in statistics_data.items():
+                self.features[key] = value
+            print(self.features)
+            emotion_predictor = EmotionPrediction(self.features)
+            predictions = emotion_predictor.predict()
+            prediction_str = "\n".join([f"{emotion}: {prob:.2f}" for emotion, prob in predictions.items()])
+        
+            # 更新 UI 显示预测结果
+            self.message_label.setText(f"情绪预测完成:\n{prediction_str}")
+            
+            # self.message_label.setText(f"情绪预测完成")
+        except Exception as e:
+            self.message_label.setText(f"情绪预测失败: {str(e)}")
+      
 
 
 if __name__ == "__main__":

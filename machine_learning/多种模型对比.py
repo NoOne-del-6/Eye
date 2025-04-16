@@ -42,8 +42,8 @@ def load_and_split_data(file_path, test_size=0.3, random_state=42):
 # 特征工程
 def create_features(df):
     feature_columns = [
-        '眨眼次数', '注视次数', '扫视次数', '静态注视熵',
-        '眼跳注视熵', '左眼瞳孔标准差', '右眼瞳孔标准差', '积极', '中性', '消极'
+        'blink_count', 'fixations', 'saccades', 'static_entropy',
+        'transition_entropy', 'std_diff_left', 'std_diff_right', 'Positive', 'Neutral', 'Negative'
     ]
     X = df[feature_columns].copy()
     # 添加多项式特征
@@ -93,30 +93,34 @@ def initialize_models():
 # 参数搜索空间
 def get_param_grid():
     param_grid = {
-        'RF': {  # 随机森林的参数搜索空间
-            'n_estimators': [100, 200, 300],
-            'max_depth': [5, 10, 15],
-            'min_samples_split': [2, 5],
-            'min_samples_leaf': [1, 2],
-            'max_features': ['sqrt', 'log2'],
-            'random_state': [42]
-        },
-        'SVC': {
-            'C': [0.1, 1.0, 10.0],
-            'kernel': ['linear', 'rbf'],
-            'gamma': ['scale', 'auto']
-        },
-        'Logistic Regression': {
-            'C': [0.1, 1.0, 10.0],
-            'solver': ['liblinear', 'saga']
-        },
-        'XGBoost': {
-            'n_estimators': [100, 200],
-            'max_depth': [3, 5],
-            'learning_rate': [0.01, 0.05],
-            'subsample': [0.8, 0.9],
-            'colsample_bytree': [0.8, 0.9]
-        }
+        'RF': {'max_depth': [5], 'max_features': ['sqrt'], 'min_samples_leaf': [1], 'min_samples_split': [5], 'n_estimators': [100], 'random_state': [42]},
+        'SVC': {'C': [0.1], 'kernel': ['linear'], 'gamma': ['scale']},
+        'Logistic Regression': {'C': [0.1], 'solver': ['saga']},
+        'XGBoost': {'n_estimators': [100], 'max_depth': [3], 'learning_rate':[ 0.01], 'subsample': [0.8], 'colsample_bytree': [0.8]}
+        # 'RF': {  # 随机森林的参数搜索空间
+        #     'n_estimators': [100, 200, 300],
+        #     'max_depth': [5, 10, 15],
+        #     'min_samples_split': [2, 5],
+        #     'min_samples_leaf': [1, 2],
+        #     'max_features': ['sqrt', 'log2'],
+        #     'random_state': [42]
+        # },
+        # 'SVC': {
+        #     'C': [0.1, 1.0, 10.0],
+        #     'kernel': ['linear', 'rbf'],
+        #     'gamma': ['scale', 'auto']
+        # },
+        # 'Logistic Regression': {
+        #     'C': [0.1, 1.0, 10.0],
+        #     'solver': ['liblinear', 'saga']
+        # },
+        # 'XGBoost': {
+        #     'n_estimators': [100, 200],
+        #     'max_depth': [3, 5],
+        #     'learning_rate': [0.01, 0.05],
+        #     'subsample': [0.8, 0.9],
+        #     'colsample_bytree': [0.8, 0.9]
+        # }
     }
     return param_grid
 
