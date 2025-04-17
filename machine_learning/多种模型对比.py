@@ -1,3 +1,4 @@
+import os
 from sklearn.calibration import label_binarize
 from sklearn.model_selection import GridSearchCV, KFold, cross_val_score
 from sklearn.metrics import accuracy_score, auc, classification_report, confusion_matrix, precision_recall_fscore_support, roc_curve
@@ -16,6 +17,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from skopt import BayesSearchCV
+import joblib
 
 warnings.filterwarnings('ignore')
 
@@ -186,6 +188,9 @@ def train_and_evaluate_with_cv(models, X_train, X_test, y_train, y_test, k_fold)
         train_metrics = calculate_metrics(y_train, y_train_pred)
         test_metrics = calculate_metrics(y_test, y_test_pred)
         
+        # 保存训练好的模型
+        save_model(model, name)
+        
         all_results[name] = {
             'cv_scores': cv_results,
             'mean_accuracy': mean_cv_score,
@@ -208,6 +213,17 @@ def train_and_evaluate_with_cv(models, X_train, X_test, y_train, y_test, k_fold)
             print(f"{metric}: {value}")
     return all_results
 
+# 保存模型
+def save_model(model, model_name):
+    # 创建 trained_models 文件夹（如果它不存在）
+    folder_path = 'trained_models'
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)  # 创建文件夹
+
+    # 保存训练好的模型到指定路径
+    model_path = os.path.join(folder_path, f"{model_name}_model.pkl")
+    joblib.dump(model, model_path)
+    print(f"{model_name} 模型已保存到 {model_path}")
 
 def save_results_to_excel(all_results, selected_features,models, file_name="模型比较结果.xlsx"):
     results_summary = []
@@ -385,7 +401,7 @@ def visualize_results(all_results, y_train, y_test, n_classes):
 # 主函数
 def main():
     # 参数
-    max_features = 6  # 选择的特征数量
+    max_features = 10  # 选择的特征数量
     k_folds = 4     # K折交叉验证的折数
     
     # 文件路径

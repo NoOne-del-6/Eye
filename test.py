@@ -1,35 +1,34 @@
 import numpy as np
+from sklearn.preprocessing import RobustScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import RobustScaler
 from sklearn.svm import SVC
 from xgboost import XGBClassifier
-
+import joblib  # 用于加载已保存的模型
 
 class EmotionPrediction:
     def __init__(self, features):
+        # 初始化特征数据
         self.features = features
-        # Initialize models
-        self.models = self.initialize_models()
-        # Initialize a dictionary to store the trained models
-        self.fitted_models = {}
+        # 加载已训练好的模型
+        self.models = self.load_trained_models()
 
-    def initialize_models(self):
-        # Initialize models with predefined parameters
+    def load_trained_models(self):
+        # 从trained_models文件夹加载已训练好的模型
         models = {
-            'RF': RandomForestClassifier(max_depth=5, max_features='sqrt', min_samples_leaf=1, min_samples_split=5, n_estimators=100, random_state=42),
-            'SVC': SVC(C=0.1, kernel='linear', gamma='scale', probability=True),
-            'Logistic Regression': LogisticRegression(C=0.1, solver='saga', multi_class='ovr'),
-            'XGBoost': XGBClassifier(n_estimators=100, max_depth=3, learning_rate=0.01, subsample=0.8, colsample_bytree=0.8)
+            'RF': joblib.load('trained_models/RF_model.pkl'),
+            'SVC': joblib.load('trained_models/SVC_model.pkl'),
+            'Logistic Regression': joblib.load('trained_models/Logistic Regression_model.pkl'),
+            'XGBoost': joblib.load('trained_models/XGBoost_model.pkl')
         }
         return models
 
     def preprocess_features(self, features):
-        # Extract numerical features for prediction
+        # 提取数值特征以供预测使用
         feature_data = [
-            features['Positive'],  # Positive feature
-            features['Neutral'],   # Neutral feature
-            features['Negative'],  # Negative feature
+            features['Positive'],  # Positive 特征
+            features['Neutral'],   # Neutral 特征
+            features['Negative'],  # Negative 特征
             features['blink_count'], 
             features['fixations'], 
             features['saccades'],
@@ -39,53 +38,46 @@ class EmotionPrediction:
             features['std_diff_right']
         ]
         
-        # Format features to be compatible with model input
+        # 将特征转换为模型可接受的格式
         return np.array(feature_data).reshape(1, -1)
 
     def predict(self):
-        # Preprocess the input features
+        # 预处理输入特征
         X_new = self.preprocess_features(self.features)
 
-        # Standardize the feature data
+        # 标准化特征数据
         scaler = RobustScaler()
         X_new_scaled = scaler.fit_transform(X_new)
 
-        # Store predictions for all models
+        # 存储所有模型的预测结果
         predictions = {}
 
-        # Predict with each model
+        # 对每个加载的模型进行预测
         for model_name, model in self.models.items():
-            # Check if the model has already been trained
-            if model_name not in self.fitted_models:
-                # If not, fit the model with the data
-                model.fit(X_new_scaled, [self.features['Positive'], self.features['Neutral'], self.features['Negative']])
-                # Save the trained model
-                self.fitted_models[model_name] = model
+            # 使用加载的训练好的模型进行预测
+            prediction = model.predict(X_new_scaled)  # 获取预测结果
             
-            # Make predictions with the trained model
-            prediction = model.predict(X_new_scaled)  # Get prediction results
-            
-            # Map the prediction to the emotion label
-            predicted_label = self.get_emotion_label(prediction[0])  # Get the predicted emotion label
-            predictions[model_name] = predicted_label  # Save the prediction result
-            print(f"{model_name} 情绪预测结果: {predicted_label}")  # Display the result
+            # 将预测结果映射为情绪标签
+            predicted_label = self.get_emotion_label(prediction[0])  # 获取情绪预测标签
+            predictions[model_name] = predicted_label  # 保存预测结果
+            print(f"{model_name} 情绪预测结果: {predicted_label}")  # 显示预测结果
 
         return predictions
 
     def get_emotion_label(self, predicted_class):
-        # Map the numerical prediction to emotion labels
+        # 将数字预测标签转换为情绪标签
         if predicted_class == 0:
-            return 'negative'  # Negative emotion
+            return 'negative'  # 负面情绪
         elif predicted_class == 1:
-            return 'neutral'   # Neutral emotion
+            return 'neutral'   # 中性情绪
         elif predicted_class == 2:
-            return 'positive'  # Positive emotion
+            return 'positive'  # 正面情绪
         else:
-            return 'unknown'   # In case of an unknown label
+            return 'unknown'   # 未知标签
 
-# Example usage:
+# 示例使用：
 
-# Assuming you have a dictionary of features
+# 假设你有一个包含特征的字典
 new_features = {
     'Positive': 0.32749465974977116,
     'Neutral': 0.4366188587122368,
@@ -99,12 +91,11 @@ new_features = {
     'std_diff_right': 0.2656
 }
 
-# Create emotion prediction object
+# 创建情绪预测对象
 emotion_predictor = EmotionPrediction(new_features)
 
-# Perform prediction
+# 执行预测
 predictions = emotion_predictor.predict()
 
-# Print all model predictions
+# 打印所有模型的预测结果
 print(predictions)
-

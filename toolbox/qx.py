@@ -1,4 +1,5 @@
 import sys
+import joblib
 from matplotlib import rcParams
 from matplotlib.colors import LogNorm
 import numpy as np
@@ -296,6 +297,54 @@ class PlotShow:
         self.resize_canvas()
         self.canvas.draw_idle()
 
+    def plot_results(self, results):
+        # 清空画布
+        self.clear_canvas()
+
+        # 获取模型名称和预测结果
+        models = list(results.keys())  # 模型名称
+        predictions = list(results.values())  # 预测结果
+
+        # 设置情绪类别对应的颜色
+        emotion_colors = {
+            'positive': 'green',
+            'neutral': 'blue',
+            'negative': 'red'
+        }
+
+        # 设置每种情绪类别的颜色
+        colors = [emotion_colors.get(prediction, 'gray') for prediction in predictions]
+
+        # 绘制条形图
+        fig = self.canvas.figure
+        ax = fig.add_subplot(111)
+        ax.clear()
+
+        # 设置条形图
+        ax.bar(models, [1] * len(models), color=colors, edgecolor='black', linewidth=1.2)
+
+        # 设置标题和标签
+        ax.set_title("Emotion Prediction Results", fontsize=16, fontweight='bold')
+        ax.set_xlabel("Models", fontsize=14, fontweight='bold')
+        ax.set_ylabel("Emotion", fontsize=14, fontweight='bold')
+
+        # 在条形图上显示预测的情绪标签
+        for i, prediction in enumerate(predictions):
+            ax.text(i, 1.05, prediction.capitalize(), ha='center', fontsize=12, weight='bold')
+
+        # 设置Y轴范围
+        ax.set_ylim(0, 1.5)
+
+        # 添加网格线
+        ax.grid(True, axis='y', linestyle='--', color='grey', alpha=0.3)
+
+        # 美化图表，使标签间不会重叠
+        ax.tick_params(axis='x', labelrotation=0, labelsize=12)
+        ax.tick_params(axis='y', labelsize=12)
+
+        # 重新绘制画布
+        self.canvas.draw_idle()
+
 class AnalyzeData:
     
     def __init__(self, data):
@@ -480,12 +529,12 @@ class EmotionPrediction:
         self.models = self.initialize_models()
 
     def initialize_models(self):
-        # 这些模型参数是已经训练好的，直接加载训练好的模型
+        # 从trained_models文件夹加载已训练好的模型
         models = {
-            'RF': RandomForestClassifier(max_depth=5, max_features='sqrt', min_samples_leaf=1, min_samples_split=5, n_estimators=100, random_state=42),
-            'SVC': SVC(C=0.1, kernel='linear', gamma='scale'),
-            'Logistic Regression': LogisticRegression(C=0.1, solver='saga'),
-            'XGBoost': XGBClassifier(n_estimators=100, max_depth=3, learning_rate=0.01, subsample=0.8, colsample_bytree=0.8)
+            'RF': joblib.load('trained_models/RF_model.pkl'),
+            'SVC': joblib.load('trained_models/SVC_model.pkl'),
+            'Logistic Regression': joblib.load('trained_models/Logistic Regression_model.pkl'),
+            'XGBoost': joblib.load('trained_models/XGBoost_model.pkl')
         }
         return models
 
@@ -507,45 +556,31 @@ class EmotionPrediction:
         # 将特征转换为适合模型的格式
         return np.array(feature_data).reshape(1, -1)
 
-    def predict(self):
-        # 预处理特征
-        X_new = self.preprocess_features(self.features)
-
-        # 标准化特征数据
-        scaler = RobustScaler()
-        X_new_scaled = scaler.fit_transform(X_new)
-
-        # 存储所有模型的预测结果
-        predictions = {}
-
-        # 预测每个模型的情绪标签
-        for model_name, model in self.models.items():
-            # 使用模型进行预测
-            prediction = model.predict(X_new_scaled)  # 获取预测结果
-            
-            # 根据预测的类别标签返回情绪
-            predicted_label = self.get_emotion_label(prediction[0])  # 获取预测的情绪标签
-            predictions[model_name] = predicted_label  # 保存预测结果
-            print(f"{model_name} 情绪预测结果: {predicted_label}")  # 显示预测结果
-
-        return predictions
-
     def get_emotion_label(self, predicted_class):
-        # 根据预测的数字标签返回情绪标签
-        # 0 -> negative
-        # 1 -> neutral
-        # 2 -> positive
         if predicted_class == 0:
             return 'negative'  # 负面情绪
         elif predicted_class == 1:
             return 'neutral'   # 中性情绪
         elif predicted_class == 2:
             return 'positive'  # 正面情绪
-        else:
-            return 'unknown'   # 如果有未知类别（例如模型可能返回4等）
         
-    
-    
+    def predict(self):
+        # 预处理特征
+        X_new = self.preprocess_features(self.features)
+        # 标准化特征数据
+        scaler = RobustScaler()
+        X_new_scaled = scaler.fit_transform(X_new)
+        predictions = {}
+        # 预测每个模型的情绪标签
+        for model_name, model in self.models.items():
+            # 使用模型进行预测
+            prediction = model.predict(X_new_scaled)  # 获取预测结果
+            # 根据预测的类别标签返回情绪
+            predicted_label = self.get_emotion_label(prediction[0])  # 获取预测的情绪标签
+            predictions[model_name] = predicted_label  # 保存预测结果
+            # print(f"{model_name} 情绪预测结果: {predicted_label}")  # 显示预测结果
+        return predictions
+
 class MainWindow(QMainWindow):
     
     def __init__(self):
@@ -736,7 +771,6 @@ class MainWindow(QMainWindow):
     def predict(self):
         try:
             # 进行情绪预测
-            
             emotion_percentages = self.analyze.calculate_emotion_percentages()
             statistics_str = self.analyze.calculate_statistics(self.blink_count)
              # 将情绪占比拆分并添加到 features 中
@@ -756,16 +790,14 @@ class MainWindow(QMainWindow):
             # 将提取的统计数据添加到 features 中
             for key, value in statistics_data.items():
                 self.features[key] = value
-
             emotion_predictor = EmotionPrediction(self.features)
             predictions = emotion_predictor.predict()
-            # 打印所有模型的预测结果
-            print(predictions)
+            # print(predictions)  # 打印预测结果
+            self.plotter.plot_results(predictions)
             self.message_label.setText(f"情绪预测完成")
         except Exception as e:
             self.message_label.setText(f"情绪预测失败: {str(e)}")
       
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
