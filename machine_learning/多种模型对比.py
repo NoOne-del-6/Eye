@@ -327,10 +327,19 @@ def plot_accuracy_comparison(all_results):
 
 # 可视化混淆矩阵
 def plot_confusion_matrix(y_true, y_pred, model_name, labels=None):
-    # 如果没有传入 labels，则自动从y_true获取类别标签
+    # 定义数字标签到情绪标签的映射
+    label_mapping = {0: 'negative', 1: 'neutral', 2: 'positive'}
+    
+    # 将数字标签转换为情绪标签
+    y_true_labels = [label_mapping[label] for label in y_true]
+    y_pred_labels = [label_mapping[label] for label in y_pred]
+    
+   
     if labels is None:
-        labels = np.unique(y_true)  # 获取类别标签
-    cm = confusion_matrix(y_true, y_pred, labels=labels)
+        labels = ['negative', 'neutral', 'positive']  # 默认标签
+    
+    # 计算混淆矩阵
+    cm = confusion_matrix(y_true_labels, y_pred_labels, labels=labels)
 
     # 使用seaborn样式
     sns.set(style="whitegrid")
@@ -346,7 +355,8 @@ def plot_confusion_matrix(y_true, y_pred, model_name, labels=None):
     plt.xticks(fontsize=12, weight='bold')
     plt.yticks(fontsize=12, weight='bold')
     plt.tight_layout()
-     # 创建results文件夹（如果不存在）
+
+    # 创建results文件夹（如果不存在）
     if not os.path.exists('results'):
         os.makedirs('results')
 
@@ -354,7 +364,6 @@ def plot_confusion_matrix(y_true, y_pred, model_name, labels=None):
     confusion_matrix_file_path = os.path.join('results', f'{model_name.lower()}_confusion_matrix.png')
     plt.savefig(confusion_matrix_file_path, dpi=300, bbox_inches='tight')
     plt.close()
-
 
 def plot_roc_curve(y_true, y_pred, model_name, n_classes):
     # 对多分类标签进行二进制化
