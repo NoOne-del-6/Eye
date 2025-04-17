@@ -489,38 +489,60 @@ class EmotionPrediction:
         }
         return models
 
-    def predict(self):
-        # 进行数据预处理
-        data = self.features  # 这里是提取的特征
+    def preprocess_features(self, features):
+        # 提取数值特征，用于预测
+        feature_data = [
+            features['blink_count'], 
+            features['fixations'], 
+            features['saccades'],
+            features['static_entropy'],
+            features['transition_entropy'],
+            features['std_diff_left'],
+            features['std_diff_right'],
+            features['Positive'],
+            features['Neutral'],
+            features['Negative']
+        ]
         
-        # 确保 self.features 是一个包含数值的字典，并提取数值部分
-        # 这里假设 self.features 是一个字典，你需要提取其中的数值部分
-        feature_values = []
-        for key, value in data.items():
-            # 检查值是否为数字类型，如果是数字则直接加入
-            if isinstance(value, (int, float)):
-                feature_values.append(value)
-            else:
-                # 如果值是非数值类型（如字典或列表），你可能需要根据具体情况处理
-                # 例如，如果是情绪占比字典，可以将其转化为数值
-                if isinstance(value, dict):
-                    feature_values.extend(value.values())  # 提取字典的所有数值部分
+        # 将特征转换为适合模型的格式
+        return np.array(feature_data).reshape(1, -1)
 
-        # 将 feature_values 转换为 numpy 数组并 reshape 为二维数组
-        feature_values = np.array(feature_values).reshape(1, -1)  # 假设你只有一行数据
+    def predict(self):
+        # 预处理特征
+        X_new = self.preprocess_features(self.features)
 
-        # 数据标准化
+        # 标准化特征数据
         scaler = RobustScaler()
-        scaled_data = scaler.fit_transform(feature_values)
+        X_new_scaled = scaler.fit_transform(X_new)
 
-        # 预测每个模型
+        # 存储所有模型的预测结果
         predictions = {}
+
+        # 预测每个模型的情绪标签
         for model_name, model in self.models.items():
-            model.fit(scaled_data, self.data_process.labels)  # 使用训练数据训练
-            prediction = model.predict(scaled_data)  # 进行预测
-            predictions[model_name] = prediction
+            # 使用模型进行预测
+            prediction = model.predict(X_new_scaled)  # 获取预测结果
+            
+            # 根据预测的类别标签返回情绪
+            predicted_label = self.get_emotion_label(prediction[0])  # 获取预测的情绪标签
+            predictions[model_name] = predicted_label  # 保存预测结果
+            print(f"{model_name} 情绪预测结果: {predicted_label}")  # 显示预测结果
 
         return predictions
+
+    def get_emotion_label(self, predicted_class):
+        # 根据预测的数字标签返回情绪标签
+        # 0 -> negative
+        # 1 -> neutral
+        # 2 -> positive
+        if predicted_class == 0:
+            return 'negative'  # 负面情绪
+        elif predicted_class == 1:
+            return 'neutral'   # 中性情绪
+        elif predicted_class == 2:
+            return 'positive'  # 正面情绪
+        else:
+            return 'unknown'   # 如果有未知类别（例如模型可能返回4等）
         
     
     
@@ -734,15 +756,12 @@ class MainWindow(QMainWindow):
             # 将提取的统计数据添加到 features 中
             for key, value in statistics_data.items():
                 self.features[key] = value
-            print(self.features)
+
             emotion_predictor = EmotionPrediction(self.features)
             predictions = emotion_predictor.predict()
-            prediction_str = "\n".join([f"{emotion}: {prob:.2f}" for emotion, prob in predictions.items()])
-        
-            # 更新 UI 显示预测结果
-            self.message_label.setText(f"情绪预测完成:\n{prediction_str}")
-            
-            # self.message_label.setText(f"情绪预测完成")
+            # 打印所有模型的预测结果
+            print(predictions)
+            self.message_label.setText(f"情绪预测完成")
         except Exception as e:
             self.message_label.setText(f"情绪预测失败: {str(e)}")
       
