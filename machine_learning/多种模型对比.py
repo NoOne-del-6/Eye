@@ -1,4 +1,5 @@
 import os
+import shap
 from sklearn.calibration import label_binarize
 from sklearn.model_selection import GridSearchCV, KFold, cross_val_score
 from sklearn.metrics import accuracy_score, auc, classification_report, confusion_matrix, precision_recall_fscore_support, roc_curve
@@ -320,7 +321,9 @@ def plot_accuracy_comparison(all_results):
     
     # 显示图表
     plt.tight_layout()
-    plt.show()
+    file_path = os.path.join('results', f'accurarcy_comparison.png')
+    plt.savefig(file_path, dpi=500, bbox_inches='tight')
+    plt.close()
 
 # 可视化混淆矩阵
 def plot_confusion_matrix(y_true, y_pred, model_name, labels=None):
@@ -343,9 +346,16 @@ def plot_confusion_matrix(y_true, y_pred, model_name, labels=None):
     plt.xticks(fontsize=12, weight='bold')
     plt.yticks(fontsize=12, weight='bold')
     plt.tight_layout()
-    plt.show()
+     # 创建results文件夹（如果不存在）
+    if not os.path.exists('results'):
+        os.makedirs('results')
 
-# 可视化ROC曲线（适用于多分类问题）
+    # 保存混淆矩阵图像到results文件夹
+    confusion_matrix_file_path = os.path.join('results', f'{model_name.lower()}_confusion_matrix.png')
+    plt.savefig(confusion_matrix_file_path, dpi=300, bbox_inches='tight')
+    plt.close()
+
+
 def plot_roc_curve(y_true, y_pred, model_name, n_classes):
     # 对多分类标签进行二进制化
     y_true_bin = label_binarize(y_true, classes=np.arange(n_classes))
@@ -381,7 +391,16 @@ def plot_roc_curve(y_true, y_pred, model_name, n_classes):
     plt.title(f'ROC Curve for {model_name}', fontsize=16, weight='bold')
     plt.legend(loc='lower right', fontsize=12)
     plt.tight_layout()
-    plt.show()
+
+    # 创建results文件夹（如果不存在）
+    if not os.path.exists('results'):
+        os.makedirs('results')
+
+    # 保存ROC曲线到results文件夹
+    roc_file_path = os.path.join('results', f'{model_name.lower()}_roc_curve.png')
+    plt.savefig(roc_file_path, dpi=300, bbox_inches='tight')
+    plt.close()
+
 
 # 可视化所有模型的评估结果
 def visualize_results(all_results, y_train, y_test, n_classes):
@@ -398,10 +417,51 @@ def visualize_results(all_results, y_train, y_test, n_classes):
         print(f"绘制 {model_name} 模型的ROC曲线...")
         plot_roc_curve(y_test, results['test_pred'], model_name, n_classes)
 
+# SHAP值计算与可视化
+def calculate_shap_values(models, X_train_selected, selected_features, y_train):
+    for name, model in models.items():
+        print(f"\n正在计算 {name} 模型的 SHAP 值...")
+        try:
+            # 确保模型已训练
+            if not hasattr(model, 'coef_') and not hasattr(model, 'feature_importances_'):
+                model.fit(X_train_selected, y_train)
+            
+            # 对于树结构的模型（如 RF 和 XGBoost），使用 TreeExplainer
+            if hasattr(model, 'feature_importances_') or name in ['RF', 'XGBoost']:
+                # 使用 TreeExplainer 计算 SHAP 值
+                explainer = shap.TreeExplainer(model)
+                shap_values = explainer.shap_values(X_train_selected)
+            
+            # 对于线性模型（如 Ridge、Lasso、SVM），使用 KernelExplainer
+            else:
+                explainer = shap.KernelExplainer(model.predict, X_train_selected)
+                shap_values = explainer.shap_values(X_train_selected)
+            # 绘制 SHAP 值汇总图
+            plt.figure(figsize=(12, 10))
+            shap.summary_plot(
+                shap_values, X_train_selected, feature_names=selected_features,
+                max_display=10, show=False
+            )
+            plt.title(f'{name} Model SHAP Summary Plot')
+            plt.tight_layout()
+            
+            shap_file_path = os.path.join('./results', f'{name.lower()}_shap_summary.png')
+            
+            plt.savefig(shap_file_path, dpi=500, bbox_inches='tight')
+            plt.close()
+
+            # 打印特征数量验证
+            print(f"使用的特征总数: {len(selected_features)}")
+            print("选择的特征如下:")
+            for i, feat in enumerate(selected_features):
+                print(f"{i+1}. {feat}")
+        except Exception as e:
+            print(f"无法计算 {name} 模型的 SHAP 值。错误信息: {e}")
+            
 # 主函数
 def main():
     # 参数
-    max_features = 10  # 选择的特征数量
+    max_features = 6  # 选择的特征数量
     k_folds = 4     # K折交叉验证的折数
     
     # 文件路径
@@ -428,6 +488,8 @@ def main():
     print("所有模型训练和评估完成，结果已保存。")
     # 可视化结果
     visualize_results(all_results, y_train, y_test,3)
-
+    # 计算SHAP值
+    calculate_shap_values(tuned_models, X_train_selected, selected_features, y_train)
+    
 if __name__ == "__main__":
     main()

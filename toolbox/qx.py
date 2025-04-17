@@ -5,7 +5,7 @@ from matplotlib.colors import LogNorm
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from PyQt5.QtWidgets import QMainWindow,QTableWidget, QTableWidgetItem,QScrollArea,QHBoxLayout, QWidget, QVBoxLayout, QPushButton, QFileDialog, QLabel, QSizePolicy, QApplication
+from PyQt5.QtWidgets import QMainWindow,QHBoxLayout, QWidget, QVBoxLayout, QPushButton, QFileDialog, QLabel, QSizePolicy, QApplication
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -15,12 +15,7 @@ from scipy.ndimage import gaussian_filter
 from matplotlib.offsetbox import AnchoredText
 import os
 from natsort import natsorted
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import RobustScaler
-from sklearn.svm import SVC
-from xgboost import XGBClassifier
-
 
 
 
@@ -529,33 +524,56 @@ class EmotionPrediction:
         self.models = self.initialize_models()
 
     def initialize_models(self):
-        # 从trained_models文件夹加载已训练好的模型
-        models = {
-            'RF': joblib.load('trained_models/RF_model.pkl'),
-            'SVC': joblib.load('trained_models/SVC_model.pkl'),
-            'Logistic Regression': joblib.load('trained_models/Logistic Regression_model.pkl'),
-            'XGBoost': joblib.load('trained_models/XGBoost_model.pkl')
-        }
-        return models
-
-    def preprocess_features(self, features):
-        # 提取数值特征，用于预测
-        feature_data = [
-            features['blink_count'], 
-            features['fixations'], 
-            features['saccades'],
-            features['static_entropy'],
-            features['transition_entropy'],
-            features['std_diff_left'],
-            features['std_diff_right'],
-            features['Positive'],
-            features['Neutral'],
-            features['Negative']
-        ]
+            # 从trained_models文件夹加载已训练好的模型
+            models = {
+                'RF': joblib.load('trained_models/RF_model.pkl'),
+                'SVC': joblib.load('trained_models/SVC_model.pkl'),
+                'Logistic Regression': joblib.load('trained_models/Logistic Regression_model.pkl'),
+                'XGBoost': joblib.load('trained_models/XGBoost_model.pkl')
+            }
+            return models
         
-        # 将特征转换为适合模型的格式
-        return np.array(feature_data).reshape(1, -1)
+    def create_features(self):
+        # 从原始数据计算特征
+        blink_count = self.features['blink_count']
+        fixations = self.features['fixations']
+        saccades = self.features['saccades']
+        static_entropy = self.features['static_entropy']
+        transition_entropy = self.features['transition_entropy']
+        std_diff_left = self.features['std_diff_left']
+        std_diff_right = self.features['std_diff_right']
+        positive = self.features['Positive']
+        neutral = self.features['Neutral']
+        negative = self.features['Negative']
 
+        # 计算所需的特征
+        transition_entropy_cubed = transition_entropy ** 3
+        blink_count_static_entropy_interaction = blink_count * static_entropy
+        blink_count_std_diff_left_interaction = blink_count * std_diff_left
+        blink_count_negative_interaction = blink_count * negative
+        neutral_negative_interaction = neutral * negative
+
+        # 选择所需的特征
+        selected_features = [
+            fixations, 
+            transition_entropy_cubed, 
+            blink_count_static_entropy_interaction, 
+            blink_count_std_diff_left_interaction, 
+            blink_count_negative_interaction, 
+            neutral_negative_interaction
+        ]
+        # 返回特征数组
+        return np.array([selected_features]).reshape(1, -1)
+        
+    def preprocess_features(self):
+        # 获取计算后的特征
+        X_new_scaled = self.create_features()
+        # 标准化特征数据
+        scaler = RobustScaler()
+        X_new_scaled = scaler.fit_transform(X_new_scaled)
+        
+        return X_new_scaled
+    
     def get_emotion_label(self, predicted_class):
         if predicted_class == 0:
             return 'negative'  # 负面情绪
@@ -566,23 +584,24 @@ class EmotionPrediction:
         
     def predict(self):
         # 预处理特征
-        X_new = self.preprocess_features(self.features)
-        # 标准化特征数据
-        scaler = RobustScaler()
-        X_new_scaled = scaler.fit_transform(X_new)
+        X_new_scaled = self.preprocess_features()
+        
+        # 存储每个模型的预测结果
         predictions = {}
-        # 预测每个模型的情绪标签
+        
+        # 对每个模型进行预测
         for model_name, model in self.models.items():
             # 使用模型进行预测
             prediction = model.predict(X_new_scaled)  # 获取预测结果
-            # 根据预测的类别标签返回情绪
-            predicted_label = self.get_emotion_label(prediction[0])  # 获取预测的情绪标签
-            predictions[model_name] = predicted_label  # 保存预测结果
-            # print(f"{model_name} 情绪预测结果: {predicted_label}")  # 显示预测结果
+            
+            # 将预测结果映射到情绪标签
+            predicted_label = self.get_emotion_label(prediction[0])
+            
+            predictions[model_name] = predicted_label  # 存储预测结果
+            print(f"{model_name} 情绪预测结果: {predicted_label}")  # 显示预测结果
         return predictions
 
 class MainWindow(QMainWindow):
-    
     def __init__(self):
         super().__init__()
         self.setWindowIcon(QIcon(r'C:\Users\Lhtooo\Desktop\生理信号分析\code\images\bg.jpg'))  # 设置窗口图标
