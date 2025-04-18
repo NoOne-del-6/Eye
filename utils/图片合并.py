@@ -9,11 +9,18 @@ import matplotlib.pyplot as plt
 #     r"C:\Users\Lhtooo\Desktop\生理信号分析\code\results\xgboost_confusion_matrix.png"
 # ]
 
+# image_paths = [
+#     r"C:\Users\Lhtooo\Desktop\生理信号分析\code\results\logistic regression_roc_curve.png",
+#     r"C:\Users\Lhtooo\Desktop\生理信号分析\code\results\rf_roc_curve.png",
+#     r"C:\Users\Lhtooo\Desktop\生理信号分析\code\results\svc_roc_curve.png",
+#     r"C:\Users\Lhtooo\Desktop\生理信号分析\code\results\xgboost_roc_curve.png"
+# ]
+
 image_paths = [
-    r"C:\Users\Lhtooo\Desktop\生理信号分析\code\results\logistic regression_roc_curve.png",
-    r"C:\Users\Lhtooo\Desktop\生理信号分析\code\results\rf_roc_curve.png",
-    r"C:\Users\Lhtooo\Desktop\生理信号分析\code\results\svc_roc_curve.png",
-    r"C:\Users\Lhtooo\Desktop\生理信号分析\code\results\xgboost_roc_curve.png"
+    r"C:\Users\Lhtooo\Desktop\toolbox\5.png",
+    r"C:\Users\Lhtooo\Desktop\toolbox\6.png",
+    r"C:\Users\Lhtooo\Desktop\toolbox\7.png",
+    r"C:\Users\Lhtooo\Desktop\toolbox\8.png"
 ]
 
 images = [Image.open(image_path) for image_path in image_paths]
@@ -37,5 +44,5 @@ plt.figure(figsize=(10, 10))
 plt.imshow(grid_image)
 plt.axis('off')  # Hide axes
 # plt.savefig(r"C:\Users\Lhtooo\Desktop\生理信号分析\code\results\combined_confusion_matrix.png", dpi=300, bbox_inches='tight')
-plt.savefig(r"C:\Users\Lhtooo\Desktop\生理信号分析\code\results\combined_roc.png", dpi=300, bbox_inches='tight')
+plt.savefig(r"C:\Users\Lhtooo\Desktop\toolbox\combined_2.png", dpi=500, bbox_inches='tight')
 plt.close()

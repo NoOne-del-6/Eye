@@ -148,10 +148,8 @@ def tune_hyperparameters(models, param_grid, X_train, y_train, k_fold):
         # 获取最佳参数和最佳模型
         best_params = grid_search.best_params_
         best_model = grid_search.best_estimator_
-        
         print(f"{name} 最佳参数: {best_params}")
         print(f"{name} 最佳得分: {grid_search.best_score_:.4f}")
-        
         tuned_models[name] = best_model
         
     return tuned_models
@@ -409,7 +407,6 @@ def plot_roc_curve(y_true, y_pred, model_name, n_classes):
     roc_file_path = os.path.join('results', f'{model_name.lower()}_roc_curve.png')
     plt.savefig(roc_file_path, dpi=300, bbox_inches='tight')
     plt.close()
-
 
 # 可视化所有模型的评估结果
 def visualize_results(all_results, y_train, y_test, n_classes):
