@@ -97,7 +97,7 @@ class PlotShow:
         ax.clear()
         # 如果数据中没有时间列，生成一个时间列作为 x 轴
         if 'time' not in data.columns:
-            data['time'] = np.arange(len(data)) / 200  # 假设采样率为 200Hz
+            data['time'] = np.arange(len(data)) / 200  
         # 绘制每个特征的曲线
         for feature, label in zip(features, feature_labels):
             ax.plot(
@@ -344,6 +344,25 @@ class AnalyzeData:
     
     def __init__(self, data):
         self.data = data
+        self.region_to_emotion = {
+            'image_1': ['Neutral', 'Neutral', 'Positive', 'Negative', 'Positive', 'Negative'],
+            'image_2': ['Positive', 'Neutral', 'Neutral', 'Positive', 'Negative', 'Negative'],
+            'image_3': ['Neutral', 'Positive', 'Negative', 'Positive', 'Neutral', 'Negative'],
+            'image_4': ['Negative', 'Negative', 'Positive', 'Neutral', 'Neutral', 'Positive'],
+            'image_5': ['Neutral', 'Negative', 'Neutral', 'Negative', 'Positive', 'Positive'],
+            'image_6': ['Neutral', 'Neutral', 'Negative', 'Positive', 'Negative', 'Positive'],
+            'image_7': ['Negative', 'Negative', 'Neutral', 'Positive', 'Positive', 'Neutral'],
+            'image_8': ['Neutral', 'Positive', 'Negative', 'Neutral', 'Negative', 'Positive'],
+            'image_9': ['Positive', 'Positive', 'Negative', 'Neutral', 'Neutral', 'Negative'],
+            'image_10': ['Positive', 'Positive', 'Neutral', 'Neutral', 'Negative', 'Negative'],
+            'image_11': ['Negative', 'Neutral', 'Positive', 'Positive', 'Negative', 'Neutral'],
+            'image_12': ['Positive', 'Positive', 'Negative', 'Negative', 'Neutral', 'Neutral'],
+            'image_13': ['Neutral', 'Negative', 'Positive', 'Neutral', 'Positive', 'Negative'],
+            'image_14': ['Positive', 'Neutral', 'Negative', 'Negative', 'Positive', 'Neutral'],
+            'image_15': ['Negative', 'Neutral', 'Positive', 'Negative', 'Positive', 'Neutral'],
+            'image_16': ['Negative', 'Positive', 'Positive', 'Negative', 'Neutral', 'Neutral']
+        }
+        
         self.aoi_bounds = {
             "A_top_left": [0, 640, 0, 540],        # 左上
             "B_top_middle": [640, 1280, 0, 540],   # 中上
@@ -353,16 +372,6 @@ class AnalyzeData:
             "C_bottom_right": [1280, 1920, 540, 1080]  # 右下
         }
         
-        # 每个区域对应的情绪标签（这里是区域到标签的映射）
-        self.region_to_emotion = {
-            "A_top_left": "Positive",
-            "B_top_middle": "Neutral",
-            "C_top_right": "Negative",
-            "A_bottom_left": "Positive",
-            "B_bottom_middle": "Neutral",
-            "C_bottom_right": "Negative"
-        }
-
         # 情绪标签
         self.emotion_labels = ['Positive', 'Neutral', 'Negative']
         
@@ -402,18 +411,27 @@ class AnalyzeData:
         # 获取眼动数据的 X 和 Y 坐标
         gaze_x = self.data['bino_eye_gaze_position_x']
         gaze_y = self.data['bino_eye_gaze_position_y']
-        
+        trigger = self.data['trigger']  
+        current_image = None  # 当前图像
+        num = 0  # 触发次数
         # 遍历眼动数据
-        for x, y in zip(gaze_x, gaze_y):
-            for label, bounds in self.aoi_bounds.items():
-                x_min, x_max, y_min, y_max = bounds
-                # 检查眼动数据是否在对应区域内
-                if x_min <= x < x_max and y_min <= y < y_max:
-                    # 获取该区域的情绪标签
-                    emotion_label = self.region_to_emotion[label]
-                    # 更新情绪计数
-                    emotion_counts[emotion_label] += 1
-                    break  # 一旦找到匹配的AOI，就停止
+        for x, y, t in zip(gaze_x, gaze_y, trigger):
+            if t == 202:  # trigger 为 202 时切换图片
+                # 获取当前触发的图片
+                current_image = f"image_{num + 1}"
+                num += 1
+            # 如果当前图像有情绪标签
+            if current_image:
+                emotions = self.region_to_emotion[current_image]
+                for i, label in enumerate(self.aoi_bounds):
+                    x_min, x_max, y_min, y_max = self.aoi_bounds[label]
+                    # 检查眼动数据是否在对应区域内
+                    if x_min <= x < x_max and y_min <= y < y_max:
+                        # 获取该区域的情绪标签
+                        emotion_label = emotions[i]
+                        # 更新情绪计数
+                        emotion_counts[emotion_label] += 1
+                        break  # 一旦找到匹配的AOI，就停止
         
         total_data_points = len(self.data)
         if total_data_points == 0:
@@ -440,26 +458,39 @@ class AnalyzeData:
         # 统计从一个情绪区域到另一个情绪区域的转移次数
         total_transitions = 0
         prev_emotion = None  # 初始化前一个情绪
+        current_image = None  # 当前图像
+        num = 0  # 触发次数，决定当前图片
+
+        # 遍历眼动数据
         for idx, row in self.data.iterrows():
-            # 获取当前的情绪区域
-            current_emotion = None
             x, y = row['bino_eye_gaze_position_x'], row['bino_eye_gaze_position_y']
+            t = row['trigger']  
+            if t == 202:  
+                num += 1
+                current_image = f"image_{num}"  
+            # 获取当前图像的情绪标签顺序
+            if current_image:
+                emotions = self.region_to_emotion[current_image]
+                current_emotion = None  # 重置当前情绪
 
-            # 判断当前坐标属于哪个情绪区域
-            for label, bounds in self.aoi_bounds.items():
-                x_min, x_max, y_min, y_max = bounds
-                if x_min <= x < x_max and y_min <= y < y_max:
-                    current_emotion = self.region_to_emotion[label]
-                    break
+                # 判断当前坐标属于哪个情绪区域
+                for i, (label, bounds) in enumerate(self.aoi_bounds.items()):
+                    x_min, x_max, y_min, y_max = bounds
+                    if x_min <= x < x_max and y_min <= y < y_max:
+                        current_emotion = emotions[i]  # 当前区域对应的情绪标签
+                        break
 
-            if current_emotion and prev_emotion and current_emotion != prev_emotion:  # 当前情绪与上一个情绪不同，记录转移
-                transition_counts[self.emotion_labels.index(prev_emotion), self.emotion_labels.index(current_emotion)] += 1
-                total_transitions += 1
+                # 判断情绪转移：如果当前情绪与上一个不同，记录转移
+                if current_emotion and prev_emotion and current_emotion != prev_emotion:
+                    transition_counts[self.emotion_labels.index(prev_emotion), self.emotion_labels.index(current_emotion)] += 1
+                    total_transitions += 1
 
-            prev_emotion = current_emotion  # 更新前一个情绪
+                # 更新前一个情绪
+                prev_emotion = current_emotion
 
+        # 如果没有转移，返回熵为 0
         if total_transitions == 0:
-            return 0  # 如果没有转移，返回熵为0
+            return 0
 
         # 计算转移概率
         transition_probabilities = transition_counts / total_transitions
@@ -471,13 +502,13 @@ class AnalyzeData:
             for j in range(num_emotions):
                 if transition_probabilities[i, j] > 0:
                     row_entropy -= transition_probabilities[i, j] * np.log2(transition_probabilities[i, j])
-            # 乘以该行的平稳分布
-            entropy += (emotion_percentages[self.emotion_labels[i]] ) * row_entropy
+            
+            # 乘以该情绪的占比（情绪分布），用来加权每行的熵值
+            entropy += (emotion_percentages[self.emotion_labels[i]] / 100) * row_entropy
         return entropy
 
     def calculate_statistics(self, blink_count):
         # 采样率与阈值设置
-        sampling_rate = 200
         fixation_duration_threshold = 20  # 100ms， 即200Hz下为20个数据点
         saccade_distance_threshold = 50  # 扫视阈值，眼睛移动超过50像素视为扫视
 
@@ -490,13 +521,11 @@ class AnalyzeData:
 
         # 计算情绪占比
         emotion_percentages = self.calculate_emotion_percentages()
-
         # 计算静态注视熵
         static_entropy = self.calculate_static_entropy(emotion_percentages)
-
         # 计算眼跳注视熵
         transition_entropy = self.calculate_transition_entropy(emotion_percentages)
-
+        print(f"眼跳注视熵: {transition_entropy:.4f}")
         # 计算左眼和右眼瞳孔直径的标准差
         std_diff_left = self.data['left_eye_pupil_diameter_mm'].std()
         std_diff_right = self.data['right_eye_pupil_diameter_mm'].std()
